@@ -1,0 +1,69 @@
+# Project N.E.K.O. - 社区 2C2G 部署方案
+# Author: 烨儿不会飞 (GitHub: @csy-11)
+# Compose V2 only. 使用包含 #3289 的镜像后才可开放远程入口。
+services:
+  neko-init:
+    image: alpine:3.20
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mkdir -p /host-dir/neko-home /host-dir/logs
+        chown -R 1000:1000 /host-dir/neko-home /host-dir/logs
+    volumes:
+      - .:/host-dir
+
+  neko-main:
+    # 首次部署可以用 latest-full；对外开放前核对版本，并用 NEKO_IMAGE 固定 tag/digest。
+    image: ${NEKO_IMAGE:-docker.gh-proxy.org/ghcr.io/project-n-e-k-o/n.e.k.o:latest-full}
+    container_name: neko
+    restart: unless-stopped
+    labels:
+      org.neko.community-2c2g.watchdog: enabled
+    depends_on:
+      neko-init:
+        condition: service_completed_successfully
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - XDG_DATA_HOME=/home/neko/.local/share
+      - NEKO_STORAGE_SELECTED_ROOT=/home/neko/.local/share/N.E.K.O
+      - NEKO_STORAGE_ANCHOR_ROOT=/home/neko/.local/share/N.E.K.O
+      - NEKO_INSTANCE_ACCESS_KEY=${NEKO_INSTANCE_ACCESS_KEY:-}
+      - NEKO_INSTANCE_PUBLIC_ORIGIN=${NEKO_INSTANCE_PUBLIC_ORIGIN:-}
+      - NEKO_COMMUNITY_WEB_CLIENT_ID=${NEKO_COMMUNITY_WEB_CLIENT_ID:-}
+      - NEKO_COMMUNITY_WEB_REDIRECT_URI=${NEKO_COMMUNITY_WEB_REDIRECT_URI:-}
+      - NEKO_TRUSTED_HOSTS=${NEKO_TRUSTED_HOSTS:-project-neko.online}
+      - NEKO_TRUSTED_ORIGINS=${NEKO_TRUSTED_ORIGINS:-}
+    ports:
+      # HTTP 仅供本机探测/私有 TLS 网关。不得直接开放到公网。
+      - "127.0.0.1:48911:80"
+      # 默认私有；验证镜像与 TLS 后可显式设置 NEKO_HTTPS_BIND_IP=0.0.0.0。
+      - "${NEKO_HTTPS_BIND_IP:-127.0.0.1}:48912:443"
+    volumes:
+      - ./neko-home:/home/neko
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - neko-network
+
+  # 一次性安装宿主 root cron；脚本独立于 Compose 生命周期，卸载见 README。
+  neko-cron-install:
+    image: alpine:3.20
+    restart: "no"
+    depends_on:
+      neko-init:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/source/install-watchdog.sh"]
+    volumes:
+      - /etc/cron.d:/host-cron.d
+      - /opt:/host-opt
+      - ./install-watchdog.sh:/source/install-watchdog.sh:ro
+      - ./watchdog.sh:/source/watchdog.sh:ro
+
+networks:
+  neko-network:
+    driver: bridge
