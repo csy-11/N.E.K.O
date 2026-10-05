@@ -27,7 +27,8 @@
 
 为了方便新手，本目录附带 install_docker.sh，可在全新 Ubuntu 机器上一键安装 Docker、补全依赖并可选开启 ZRAM 内存优化。用法：
 ```bash
-sudo bash install_docker.sh --optimize --start#cd到本指南目录
+#cd到本指南目录：cd <本指南所在目录> 
+sudo bash install_docker.sh --optimize --start
 ```
 
 ### 2.1 前置条件（务必先确认）
